@@ -1,0 +1,22 @@
+#sd_adv_grid_settings {
+  /* reverse to Gradio's default */
+  --checkbox-label-gap: var(--spacing-lg);
+  padding-top: var(--layout-gap);
+}
+
+#sd_adv_grid_settings .extra-options .gradio-checkbox {
+  margin: 0;
+  display: flex;
+}
+
+#sd_adv_grid_settings .extra-options div {
+  width: 100%;
+}
+
+#sd_adv_grid_settings .extra-options .gradio-checkbox.hidden {
+  display: none;
+}
+
+#sd_adv_grid_settings .extra-options .gradio-checkbox label {
+  align-self: end;
+}
