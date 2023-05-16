@@ -1,0 +1,4 @@
+GitPython
+gradio
+Pillow
+numpy

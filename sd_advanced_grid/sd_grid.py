@@ -1,30 +1,34 @@
-"""Entry point of the extension"""
+# Python
 from datetime import datetime
 from copy import copy
 
+# Lib
 import gradio as gr
 
+# SD-WebUI
 from modules import shared, sd_models, sd_vae, scripts, processing
-from modules.processing import Processed, StableDiffusionProcessing, StableDiffusionProcessingTxt2Img
+from modules.processing import Processed, StableDiffusionProcessingTxt2Img as SDP
 from modules.shared import opts
 from modules.ui_components import ToolButton
 
+# Local
 from sd_advanced_grid.grid_settings import AxisOption, SHARED_OPTS
 from sd_advanced_grid.process_axes import generate_grid
 from sd_advanced_grid.axis_options import axis_options
 
-## Constants
-refresh_symbol = '\U0001f504'  # 🔄
-fill_values_symbol = "\U0001f4d2"  # 📒
 
+# ################################# Constants ################################ #
 
-## Helpers
+REFRESH_SYMBOL = "\U0001f504"  # 🔄
+FILL_SYMBOL = "\U0001f4d2"  # 📒
 
-class SharedOptionsCache(object):
+# ################################## Helpers ################################# #
+
+class SharedOptionsCache():
     def __enter__(self):
         for key in SHARED_OPTS:
             setattr(self, key, getattr(opts, key, None))
-  
+
     def __exit__(self, exc_type, exc_value, tb):
         for key in SHARED_OPTS:
             setattr(opts, key, getattr(self, key))
@@ -32,7 +36,7 @@ class SharedOptionsCache(object):
         sd_vae.reload_vae_weights()
 
 
-## Script class
+# ############################### Script Class ############################### #
 
 class ScriptGrid(scripts.Script):
     BASEDIR = scripts.basedir()
@@ -43,7 +47,7 @@ class ScriptGrid(scripts.Script):
     def show(self, is_img2img: bool):
         return not is_img2img
 
-    def ui(self, is_img2img):
+    def ui(self, _):
         max_axes = 10
         min_axes = 4
         cur_axes = min_axes
@@ -58,7 +62,7 @@ class ScriptGrid(scripts.Script):
                 return ", ".join(list(axis.choices()))
             return gr.update()
 
-        def on_axis_change(axis_index: int, axis_value):
+        def on_axis_change(axis_index: int):
             axis_type = axis_options[axis_index]
             return [
                 gr.Textbox.update(interactive=axis_index!=0, value=""),
@@ -76,13 +80,13 @@ class ScriptGrid(scripts.Script):
                 row_status = gr.Checkbox(value=axis_count <= min_axes, visible=False)
                 row_type = gr.Dropdown(label=f"Axis {axis_count} Type", choices=[axis.label for axis in axis_options], value=axis_options[0].label, type="index")
                 row_value = gr.Textbox(label=f"Axis {axis_count} Values", interactive=False, lines=1)
-                fill_row_button = ToolButton(value=fill_values_symbol, interactive=False)
+                fill_row_button = ToolButton(value=FILL_SYMBOL, interactive=False)
                 # row_value could be based on input Axis
                 # e.g. multi select for choices
                 #      double checkboxes for boolean
                 #      sliders and steps for numbers
             row_status.change(update_axis, inputs=[row_status], outputs=[axis_row, row_type]) #type: ignore
-            row_type.change(on_axis_change, inputs=[row_type, row_value], outputs=[row_value, fill_row_button])
+            row_type.change(on_axis_change, inputs=[row_type], outputs=[row_value, fill_row_button])
             fill_row_button.click(fill_axis, inputs=[row_type], outputs=[row_value])
             axes_selection.extend([row_type, row_value])
             return row_status
@@ -138,9 +142,9 @@ class ScriptGrid(scripts.Script):
 
         return [grid_name, do_overwrite, allow_batches, test_run, force_vae] + axes_selection
 
-    def run(self, sd_processing: StableDiffusionProcessingTxt2Img, grid_name, overwrite, allow_batches, test_run, force_vae, *axes_selection) -> Processed:
+    def run(self, sd_processing: SDP, grid_name, overwrite, allow_batches, test_run, force_vae, *axes_selection) -> Processed:
         if grid_name is None or grid_name == "":
-            grid_name = f"adv_grid_{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}"
+            grid_name = f"{datetime.now().strftime('%d_%m_%Y_%H_%M_%S')}"
 
         # Clean up default params
         adv_proc = copy(sd_processing)

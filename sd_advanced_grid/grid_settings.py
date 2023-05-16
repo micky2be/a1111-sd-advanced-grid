@@ -1,17 +1,18 @@
+# Python
 from __future__ import annotations
-from typing import Type, Callable, Optional
-
+from typing import Type, Callable
 from dataclasses import dataclass, field as set_field, KW_ONLY
 
-from modules import shared, sd_models, sd_vae
+# SD-WebUI
+from modules import sd_models, sd_vae
 from modules.processing import StableDiffusionProcessing as SDP
 
+# Local
 from sd_advanced_grid.utils import get_closest_from_list, clean_name
 from sd_advanced_grid.utils import parse_range_int, parse_range_float
-from sd_advanced_grid.utils import TRUTHY, FALSY
 
+# ################################# Constants ################################ #
 
-######################### Constants #########################
 SHARED_OPTS = [
     "CLIP_stop_at_last_layers",
     "code_former_weight",
@@ -23,7 +24,7 @@ SHARED_OPTS = [
     "use_scale_latent_for_hires_fix"
 ]
 
-######################### Axis #########################
+# ######################### Axis Modifier Interpreter ######################## #
 
 @dataclass
 class AxisOption:
@@ -42,32 +43,32 @@ class AxisOption:
 
 
     @staticmethod
-    def apply_to(field:str, value:AxisOption.type, p:SDP):
+    def apply_to(field:str, value:AxisOption.type, proc:SDP):
         if field in SHARED_OPTS:
-            p.override_settings[field] = value
+            proc.override_settings[field] = value
         else:
-            setattr(p, field, value)
+            setattr(proc, field, value)
 
-    def _apply(self, p:SDP):
+    def _apply(self, proc:SDP):
         value = self._values[self._index]
-        if self.type == None: return
+        if self.type is None: return
         if self.toggles is None or value != "Default":
-            AxisOption.apply_to(self.id, value, p)
+            AxisOption.apply_to(self.id, value, proc)
 
         if self.toggles:
             if self.choices:
-                AxisOption.apply_to(self.toggles, value != "None", p)
+                AxisOption.apply_to(self.toggles, value != "None", proc)
             else:
-                AxisOption.apply_to(self.toggles, True, p)
+                AxisOption.apply_to(self.toggles, True, proc)
 
-    def apply(self, p:SDP):
+    def apply(self, proc:SDP):
         """tranform the value on the Processing job with the current selected value"""
-        if self._valid[self._index] == False:
+        if self._valid[self._index] is False:
             raise RuntimeError(f"Unexpected error: Values not valid for {self.label}")
         try:
-            self._apply(p)
-        except:
-            raise RuntimeError(f"Unexpected error: {self.value} could not be applied on {self.label}")
+            self._apply(proc)
+        except Exception as exc:
+            raise RuntimeError(f"Unexpected error: {self.value} could not be applied on {self.label}") from exc
 
     def next(self):
         if self._index + 1 < self.length:
@@ -98,6 +99,10 @@ class AxisOption:
     def is_valid(self):
         return all(self._valid)
 
+    @property
+    def index(self):
+        return self._index
+
     def dict(self):
         return {
             "label": self.label,
@@ -119,7 +124,7 @@ class AxisOption:
 
     def unset(self):
         self._index = 0
-        self._values = list()
+        self._values = []
         self._valid = []
 
     def _format_value(self, value: str) -> AxisOption.type:
@@ -147,31 +152,31 @@ class AxisOption:
         return cast_value
 
 
-    def validate(self, p: Optional[SDP], value) -> None:
+    def validate(self, _, value) -> None:
         """raise an error if the data type is incorrect"""
-        same_type = type(value) == self.type
-        if self.type == int or self.type == float:
+        same_type = isinstance(value, self.type)
+        if self.type in (int, float):
             if not same_type:
                 raise RuntimeError(f"must be a {self.type} number")
-            elif self.min is not None and value < self.min: # type: ignore
+            if self.min is not None and value < self.min: # type: ignore
                 raise RuntimeError(f"must be at least {self.min}")
-            elif self.max is not None and value > self.max: # type: ignore
+            if self.max is not None and value > self.max: # type: ignore
                 raise RuntimeError(f"must not exceed {self.max}")
 
-        elif self.type == bool and not same_type:
+        if self.type == bool and not same_type:
             raise RuntimeError("must be either 'True' or 'False'")
 
-        elif self.type == str and self.choices is not None and (not same_type or value == ""):
+        if self.type == str and self.choices is not None and (not same_type or value == ""):
             raise RuntimeError("not matched to any entry in the list")
-            
-        elif not same_type:
-            raise RuntimeError(f"must be a valid type")
+
+        if not same_type:
+            raise RuntimeError("must be a valid type")
 
 
-    def validate_all(self, p: Optional[SDP] = None, quiet: bool = True):
+    def validate_all(self, proc:SDP = None, quiet:bool = True):
         def validation(value):
             try:
-                self.validate(p, value)
+                self.validate(proc, value)
             except RuntimeError as err:
                 return f"'{value}': {err=}"
 
@@ -189,7 +194,7 @@ class AxisOption:
 class AxisNothing(AxisOption):
     type: None = None
 
-    def _apply(self, *args, **kwargs) :
+    def _apply(self, _) :
         return
 
 
@@ -197,7 +202,7 @@ class AxisNothing(AxisOption):
 class AxisModel(AxisOption):
     _: KW_ONLY
     cost: float = 1.0 # change of checkpoints is too heavy, do it less often
-        
+
     def validate(self, _, value:str):
         info = sd_models.get_closet_checkpoint_match(value)
         if info is None:
@@ -208,7 +213,7 @@ class AxisModel(AxisOption):
 class AxisVae(AxisOption):
     _: KW_ONLY
     cost: float = 0.7
-        
+
     def validate(self, _, value:str):
         if value in ["None", "Automatic"]:
             return
@@ -223,21 +228,21 @@ class AxisReplace(AxisOption):
     _values: list[str] = set_field(init=False, default_factory=list)
     __tag: str = set_field(init=False, default="")
 
-    def _apply(self, p):
+    def _apply(self, proc):
         """tranform the value on the Processing job"""
         value = str(self._values[self._index])
-        p.prompt = p.prompt.replace(self.__tag, value)
-        p.negative_prompt = p.negative_prompt.replace(self.__tag, value)
+        proc.prompt = proc.prompt.replace(self.__tag, value)
+        proc.negative_prompt = proc.negative_prompt.replace(self.__tag, value)
 
-    def validate(self, p:SDP, _):
+    def validate(self, proc:SDP, _):
         # need validation at runtime
         if self.__tag is None or self.__tag == "":
-            raise RuntimeError(f"Values not set")
+            raise RuntimeError("Values not set")
 
-        if self.__tag not in p.prompt and self.__tag not in p.negative_prompt:
+        if self.__tag not in proc.prompt and self.__tag not in proc.negative_prompt:
             raise RuntimeError(f"'{self.__tag}' not found in all prompts")
 
-    def set(self, values:str) -> AxisOption:
+    def set(self, values:str = "") -> AxisOption:
         """
         Promt_replace can handle different format sunch as:
         - 'one, two, three' => ['one=one', 'one=two', 'one=three']
@@ -248,7 +253,7 @@ class AxisReplace(AxisOption):
         has_double_pipe = "||" in values
         value_list = [val.strip() for val in values.split("||" if has_double_pipe else ",")]
         for value_pair in value_list:
-            value = value_pair.split('=', maxsplit=1)
+            value = value_pair.split("=", maxsplit=1)
             if len(value) == 1:
                 tag = self.__tag or value[0]
                 self._values.append(value[0])
@@ -263,4 +268,3 @@ class AxisReplace(AxisOption):
         super().unset()
         self.label = self.label.replace(self.__tag, "TAG")
         self.__tag = ""
-

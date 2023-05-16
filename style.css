@@ -9,12 +9,12 @@
   display: flex;
 }
 
-#sd_adv_grid_settings .extra-options div {
-  width: 100%;
-}
-
 #sd_adv_grid_settings .extra-options .gradio-checkbox.hidden {
   display: none;
+}
+
+#sd_adv_grid_settings .extra-options .gradio-checkbox > div {
+  width: 100%;
 }
 
 #sd_adv_grid_settings .extra-options .gradio-checkbox label {
