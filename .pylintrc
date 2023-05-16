@@ -1,15 +1,31 @@
 [MAIN]
-#errors-only=yes
 ignored-modules=modules
+suggestion-mode=yes
 
 [FORMAT]
 max-module-lines=300
 
+[BASIC]
+const-naming-style=UPPER_CASE
+
+[DESIGN]
+max-attributes=15
+
 [MESSAGES CONTROL]
-disable=line-too-long,
+disable=
+  line-too-long,
   missing-module-docstring,
   missing-class-docstring,
-  missing-function-docstring
+  missing-function-docstring,
+  too-many-arguments,
+  fixme,
 
 [STRING]
 check-quote-consistency=yes
+
+[Logging]
+logging-format-style=new
+
+[REPORTS]
+output-format=text
+msg-template="[{C}]{line:3d}: {msg}"

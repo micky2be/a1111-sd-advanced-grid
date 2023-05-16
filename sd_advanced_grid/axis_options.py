@@ -19,7 +19,7 @@ axis_options: list[AxisOption] = [
     AxisOption("Sampler",                   type=str,                   field="sampler_name",               choices=lambda: [x.name for x in sd_samplers.all_samplers]),
     AxisOption("CFG Scale",                 type=float, max=30,         field="cfg_scale"),
 
-    AxisOption("Restore Faces",             type=str,                   field="face_restoration_model",     toggles="restore_faces",    choices=lambda: list(map(lambda m: m.name(), shared.face_restorers)) + ["None", "Default"]),
+    AxisOption("Restore Faces",             type=str,                   field="face_restoration_model",     toggles="restore_faces",    choices=lambda: [model.name() for model in shared.face_restorers] + ["None", "Default"]),
     AxisOption("CodeFormer Weight",         type=float,                 field="code_former_weight",         toggles="restore_faces"),
     AxisOption("Tiling",                    type=bool,                  field="tiling"),
     # AxisOption("Width",                     type=int,                   field="width"),

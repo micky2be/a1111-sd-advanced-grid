@@ -18,7 +18,7 @@ def get_closest_from_list(name: str, choices: list[str]) -> str:
     if name in choices:
         return name
 
-    found = sorted([item for item in choices if name in item], key=lambda x: len(x))
+    found = sorted([item for item in choices if name in item], key=len)
     if found:
         return found[0]
     return ""

@@ -79,11 +79,11 @@ def apply_axes(set_proc:SDP, axes_settings: list[AxisOption]):
 
     # self.proc.styles = self.proc.styles[:] # allows for multiple styles axis
     for axis in axes:
+        axis_code[axes_settings.index(axis)] = convert(axis.index + 1)
         try:
-            axis_code[axes_settings.index(axis)] = convert(axis.index + 1)
             axis.apply(set_proc)
-        except Exception as err:
-            print(f"\nUnexpected {err=}, {type(err)=}")
+        except RuntimeError as err:
+            print(f"\nUnexpected {err=}")
             excs.append(err)
         else:
             axis_set[axis.id] = (axis.label, axis.value)
@@ -94,6 +94,10 @@ def apply_axes(set_proc:SDP, axes_settings: list[AxisOption]):
 
 def prepare_jobs(adv_proc:SDP, axes_settings: list[AxisOption], job_count: int, grid_name:str, batches: int = 1):
     """create a dedicated processing instance for each variation with different axes values"""
+
+    if batches > 1:
+        # note: batches are possible but only with prompt, negative_prompt, seeds, or subseed
+        pass
 
     cells: list[GridCell] = []
 
@@ -169,6 +173,7 @@ class GridCell:
         total_steps = self.proc.steps + ((self.proc.hr_second_pass_steps or self.proc.steps) if self.proc.enable_hr else 0)
 
         if file_exist(save_to, base_name, self.cell_id) and not overwrite:
+            # pylint: disable=protected-access
             self.skipped = True
             if shared.total_tqdm._tqdm:
                 # update console progessbar
@@ -185,17 +190,14 @@ class GridCell:
             print(f" * {label}: {value}")
         print("")
 
-        try:
-            processed = processing.process_images(self.proc)
-        except Exception as err:
-            print(f"\nUnexpected {err=}, {type(err)=}")
-            self.failed = True
-            return
+        # All the magic happens here
+        processed = processing.process_images(self.proc)
 
         if shared.state.interrupted:
             return
 
         if shared.state.skipped:
+            # pylint: disable=protected-access
             self.skipped = True
             shared.state.skipped = False
             if shared.total_tqdm._tqdm:
@@ -244,9 +246,8 @@ def generate_grid(adv_proc:SDP, grid_name:str, overwrite:bool, batches: int, tes
 
     processed = Processed(adv_proc, [], adv_proc.seed, "", adv_proc.subseed)
 
-    # note: batches are possible but only with prompt, negative_prompt, seeds, or subseed
     aprox_jobs = math.prod([axis.length for axis in axes_settings])
-    cells = prepare_jobs(adv_proc, axes_settings, aprox_jobs, grid_name)
+    cells = prepare_jobs(adv_proc, axes_settings, aprox_jobs, grid_name, batches)
 
     grid_path.mkdir(parents=True, exist_ok=True)
     grid_data = {
@@ -261,7 +262,7 @@ def generate_grid(adv_proc:SDP, grid_name:str, overwrite:bool, batches: int, tes
     if test_run:
         return processed
 
-    shared.state.job_count = sum([cell.job_count for cell in cells])
+    shared.state.job_count = sum(cell.job_count for cell in cells)
     shared.state.processing_has_refined_job_count = True
 
     print(f"\nStarting generation of {len(cells)} variants")

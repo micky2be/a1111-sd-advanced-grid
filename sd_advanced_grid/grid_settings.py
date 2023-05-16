@@ -1,6 +1,6 @@
 # Python
 from __future__ import annotations
-from typing import Type, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field as set_field, KW_ONLY
 
 # SD-WebUI
@@ -29,7 +29,7 @@ SHARED_OPTS = [
 @dataclass
 class AxisOption:
     label: str
-    type: Type[str | int | float | bool]
+    type: type[str | int | float | bool]
     _: KW_ONLY
     field: str | None = None
     min: float = 0.0
@@ -51,7 +51,8 @@ class AxisOption:
 
     def _apply(self, proc:SDP):
         value = self._values[self._index]
-        if self.type is None: return
+        if self.type is None:
+            return
         if self.toggles is None or value != "Default":
             AxisOption.apply_to(self.id, value, proc)
 
@@ -78,7 +79,7 @@ class AxisOption:
         return False
 
     @property
-    def id(self):
+    def id(self): # pylint: disable=invalid-name
         return self.field if self.field is not None else clean_name(self.label)
 
     @property
@@ -128,7 +129,7 @@ class AxisOption:
         self._valid = []
 
     def _format_value(self, value: str) -> AxisOption.type:
-        cast_value = ""
+        cast_value = None
         if self.type == int:
             cast_value = int(value)
 
@@ -137,9 +138,9 @@ class AxisOption:
 
         elif self.type == bool:
             cast_value = str(value).lower().strip()
-            if cast_value in ["true", "yes", "1"]:
+            if cast_value in {"true", "yes", "1"}:
                 cast_value = True
-            elif cast_value in ["false", "no", "0"]:
+            elif cast_value in {"false", "no", "0"}:
                 cast_value = False
 
         elif self.type == str:
@@ -179,8 +180,9 @@ class AxisOption:
                 self.validate(proc, value)
             except RuntimeError as err:
                 return f"'{value}': {err=}"
+            return None
 
-        result = list(map(validation, self._values))
+        result = [validation(value) for value in self._values]
 
         if any(result):
             errors = [err for err in result if err]
@@ -215,7 +217,7 @@ class AxisVae(AxisOption):
     cost: float = 0.7
 
     def validate(self, _, value:str):
-        if value in ["None", "Automatic"]:
+        if value in {"None", "Automatic"}:
             return
         if sd_vae.vae_dict.get(value, None) is None:
             raise RuntimeError(f"Unknown vae: {value}")

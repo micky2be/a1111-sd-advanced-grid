@@ -21,6 +21,7 @@ from sd_advanced_grid.axis_options import axis_options
 
 REFRESH_SYMBOL = "\U0001f504"  # 🔄
 FILL_SYMBOL = "\U0001f4d2"  # 📒
+STEP_FIELDS = ["steps", "hr_second_pass_steps"]
 
 # ################################## Helpers ################################# #
 
@@ -29,7 +30,7 @@ class SharedOptionsCache():
         for key in SHARED_OPTS:
             setattr(self, key, getattr(opts, key, None))
 
-    def __exit__(self, exc_type, exc_value, tb):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         for key in SHARED_OPTS:
             setattr(opts, key, getattr(self, key))
         sd_models.reload_model_weights()
@@ -39,6 +40,7 @@ class SharedOptionsCache():
 # ############################### Script Class ############################### #
 
 class ScriptGrid(scripts.Script):
+    # pylint: disable=too-many-locals
     BASEDIR = scripts.basedir()
 
     def title(self):
@@ -47,7 +49,7 @@ class ScriptGrid(scripts.Script):
     def show(self, is_img2img: bool):
         return not is_img2img
 
-    def ui(self, _):
+    def ui(self, _): # pylint: disable=invalid-name
         max_axes = 10
         min_axes = 4
         cur_axes = min_axes
@@ -58,7 +60,7 @@ class ScriptGrid(scripts.Script):
             axis = axis_options[axis_index]
             if axis.type == bool:
                 return "true, false"
-            elif axis.choices is not None:
+            if axis.choices is not None:
                 return ", ".join(list(axis.choices()))
             return gr.update()
 
@@ -148,6 +150,7 @@ class ScriptGrid(scripts.Script):
 
         # Clean up default params
         adv_proc = copy(sd_processing)
+        processing.fix_seed(adv_proc)
         adv_proc.override_settings_restore_afterwards = False
         adv_proc.n_iter = 1
         adv_proc.batch_size = 1
@@ -155,11 +158,10 @@ class ScriptGrid(scripts.Script):
         adv_proc.do_not_save_samples = True
         batches = adv_proc.batch_size if allow_batches else 1
 
-        adv_proc.override_settings["save_images_add_number"] = False
-        # adv_proc.override_settings["sd_vae_as_default"] = False
-        processing.fix_seed(adv_proc)
+        if force_vae:
+            # adv_proc.override_settings["sd_vae_as_default"] = False
+            pass
 
-        STEPS_MOD = ["steps", "hr_second_pass_steps"]
         total_steps: list[int] = [adv_proc.steps, 0]
         variation = 1
         if adv_proc.enable_hr:
@@ -174,7 +176,7 @@ class ScriptGrid(scripts.Script):
             axis = axis_options[axis_index]
             axes_settings.append(axis.set(axis_values))
 
-            index = STEPS_MOD.index(axis.id) if axis.id in STEPS_MOD else None
+            index = STEP_FIELDS.index(axis.id) if axis.id in STEP_FIELDS else None
             if index is not None:
                 total_steps[index] = sum(axis.values) # type: ignore
             else:
