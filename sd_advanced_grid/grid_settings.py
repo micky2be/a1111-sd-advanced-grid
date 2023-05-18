@@ -1,15 +1,22 @@
 # Python
 from __future__ import annotations
-from collections.abc import Callable
-from dataclasses import dataclass, field as set_field, KW_ONLY
+
+from dataclasses import KW_ONLY, dataclass
+from dataclasses import field as set_field
+from typing import TYPE_CHECKING
 
 # SD-WebUI
 from modules import sd_models, sd_vae
-from modules.processing import StableDiffusionProcessing as SDP
 
 # Local
-from sd_advanced_grid.utils import get_closest_from_list, clean_name
-from sd_advanced_grid.utils import parse_range_int, parse_range_float
+from sd_advanced_grid.utils import clean_name, get_closest_from_list, logger, parse_range_float, parse_range_int
+
+# ################################### Types ################################## #
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from modules.processing import StableDiffusionProcessing as SD_Proc
 
 # ################################# Constants ################################ #
 
@@ -21,10 +28,11 @@ SHARED_OPTS = [
     "sd_vae",
     "sd_model_checkpoint",
     "uni_pc_order",
-    "use_scale_latent_for_hires_fix"
+    "use_scale_latent_for_hires_fix",
 ]
 
 # ######################### Axis Modifier Interpreter ######################## #
+
 
 @dataclass
 class AxisOption:
@@ -41,15 +49,14 @@ class AxisOption:
     _values: list[str] | list[int] | list[float] | list[bool] = set_field(init=False, default_factory=list)
     _index: int = set_field(init=False, default=0)
 
-
     @staticmethod
-    def apply_to(field:str, value:AxisOption.type, proc:SDP):
+    def apply_to(field: str, value: AxisOption.type, proc: SD_Proc):
         if field in SHARED_OPTS:
             proc.override_settings[field] = value
         else:
             setattr(proc, field, value)
 
-    def _apply(self, proc:SDP):
+    def _apply(self, proc: SD_Proc):
         value = self._values[self._index]
         if self.type is None:
             return
@@ -62,14 +69,14 @@ class AxisOption:
             else:
                 AxisOption.apply_to(self.toggles, True, proc)
 
-    def apply(self, proc:SDP):
+    def apply(self, proc: SD_Proc):
         """tranform the value on the Processing job with the current selected value"""
         if self._valid[self._index] is False:
-            raise RuntimeError(f"Unexpected error: Values not valid for {self.label}")
+            raise RuntimeError(f"Value not valid for {self.label}: {self.value}")
         try:
             self._apply(proc)
         except Exception as exc:
-            raise RuntimeError(f"Unexpected error: {self.value} could not be applied on {self.label}") from exc
+            raise RuntimeError(f"{self.value} could not be applied on {self.label}") from exc
 
     def next(self):
         if self._index + 1 < self.length:
@@ -79,7 +86,7 @@ class AxisOption:
         return False
 
     @property
-    def id(self): # pylint: disable=invalid-name
+    def id(self):  # pylint: disable=invalid-name
         return self.field if self.field is not None else clean_name(self.label)
 
     @property
@@ -105,22 +112,18 @@ class AxisOption:
         return self._index
 
     def dict(self):
-        return {
-            "label": self.label,
-            "param": self.id,
-            "values": self.values
-        }
+        return {"label": self.label, "param": self.id, "values": self.values}
 
-    def set(self, values:str = "") -> AxisOption:
+    def set(self, values: str = "") -> AxisOption:
         """format input from a string to a list of value"""
         has_double_pipe = "||" in values
-        value_list = [val.strip() for val in values.split("||" if has_double_pipe else ",")]
+        value_list = [val.strip() for val in values.split("||" if has_double_pipe else ",") if val.strip()]
         if self.type == int:
             self._values = parse_range_int(value_list)
         elif self.type == float:
             self._values = parse_range_float(value_list)
         else:
-            self._values = [self._format_value(val) for val in value_list] # type: ignore
+            self._values = [value for value in map(self._format_value, value_list) if value]  # type: ignore
         return self
 
     def unset(self):
@@ -143,43 +146,38 @@ class AxisOption:
             elif cast_value in {"false", "no", "0"}:
                 cast_value = False
 
-        elif self.type == str:
-            if self.choices is not None:
-                valid_list = self.choices()
-                cast_value = get_closest_from_list(value, valid_list)
-        else:
-            cast_value = value.strip()
+        elif self.type == str and self.choices is not None:
+            valid_list = self.choices()
+            cast_value = get_closest_from_list(value, valid_list)
 
-        return cast_value
-
+        return cast_value or value.strip()
 
     def validate(self, _, value) -> None:
         """raise an error if the data type is incorrect"""
         same_type = isinstance(value, self.type)
         if self.type in (int, float):
             if not same_type:
-                raise RuntimeError(f"must be a {self.type} number")
-            if self.min is not None and value < self.min: # type: ignore
-                raise RuntimeError(f"must be at least {self.min}")
-            if self.max is not None and value > self.max: # type: ignore
-                raise RuntimeError(f"must not exceed {self.max}")
+                raise RuntimeError(f"Must be a {self.type} number")
+            if self.min is not None and value < self.min:  # type: ignore
+                raise RuntimeError(f"Must be at least {self.min}")
+            if self.max is not None and value > self.max:  # type: ignore
+                raise RuntimeError(f"Must not exceed {self.max}")
 
         if self.type == bool and not same_type:
-            raise RuntimeError("must be either 'True' or 'False'")
+            raise RuntimeError("Must be either 'True' or 'False'")
 
-        if self.type == str and self.choices is not None and (not same_type or value == ""):
-            raise RuntimeError("not matched to any entry in the list")
+        if self.type == str and self.choices is not None and (not same_type or not value):
+            raise RuntimeError("Not found in the list")
 
         if not same_type:
-            raise RuntimeError("must be a valid type")
+            raise RuntimeError("Must be a valid type")
 
-
-    def validate_all(self, proc:SDP = None, quiet:bool = True):
+    def validate_all(self, proc: SD_Proc, quiet: bool = True):
         def validation(value):
             try:
                 self.validate(proc, value)
             except RuntimeError as err:
-                return f"'{value}': {err=}"
+                return f"'{err} for: {value}'"
             return None
 
         result = [validation(value) for value in self._values]
@@ -188,7 +186,7 @@ class AxisOption:
             errors = [err for err in result if err]
             if not quiet:
                 raise RuntimeError(f"Invalid parameters in {self.label}: {errors}")
-            print(f"Invalid parameters in {self.label}: {errors}")
+            logger.warn(f"Invalid parameters in {self.label}", errors)
         self._valid = [err is None for err in result]
 
 
@@ -196,16 +194,16 @@ class AxisOption:
 class AxisNothing(AxisOption):
     type: None = None
 
-    def _apply(self, _) :
+    def _apply(self, _):
         return
 
 
 @dataclass
 class AxisModel(AxisOption):
     _: KW_ONLY
-    cost: float = 1.0 # change of checkpoints is too heavy, do it less often
+    cost: float = 1.0  # change of checkpoints is too heavy, do it less often
 
-    def validate(self, _, value:str):
+    def validate(self, _, value: str):
         info = sd_models.get_closet_checkpoint_match(value)
         if info is None:
             raise RuntimeError("Unknown checkpoint")
@@ -216,17 +214,17 @@ class AxisVae(AxisOption):
     _: KW_ONLY
     cost: float = 0.7
 
-    def validate(self, _, value:str):
+    def validate(self, _, value: str):
         if value in {"None", "Automatic"}:
             return
         if sd_vae.vae_dict.get(value, None) is None:
-            raise RuntimeError(f"Unknown vae: {value}")
+            raise RuntimeError("Unknown VAE")
 
 
 @dataclass
 class AxisReplace(AxisOption):
     _: KW_ONLY
-    cost: float = 0.5 # to allow prompt to be replaced before string manipulation
+    cost: float = 0.5  # to allow prompt to be replaced before string manipulation
     _values: list[str] = set_field(init=False, default_factory=list)
     __tag: str = set_field(init=False, default="")
 
@@ -236,15 +234,15 @@ class AxisReplace(AxisOption):
         proc.prompt = proc.prompt.replace(self.__tag, value)
         proc.negative_prompt = proc.negative_prompt.replace(self.__tag, value)
 
-    def validate(self, proc:SDP, _):
+    def validate(self, proc: SD_Proc, _):
         # need validation at runtime
-        if self.__tag is None or self.__tag == "":
-            raise RuntimeError("Values not set")
+        if not self.__tag:
+            raise RuntimeError("Values not set or invalid format")
 
         if self.__tag not in proc.prompt and self.__tag not in proc.negative_prompt:
-            raise RuntimeError(f"'{self.__tag}' not found in all prompts")
+            raise RuntimeError(f"Tag '{self.__tag}' not found in all prompts")
 
-    def set(self, values:str = "") -> AxisOption:
+    def set(self, values: str = "") -> AxisOption:
         """
         Promt_replace can handle different format sunch as:
         - 'one, two, three' => ['one=one', 'one=two', 'one=three']
@@ -255,13 +253,15 @@ class AxisReplace(AxisOption):
         has_double_pipe = "||" in values
         value_list = [val.strip() for val in values.split("||" if has_double_pipe else ",")]
         for value_pair in value_list:
-            value = value_pair.split("=", maxsplit=1)
-            if len(value) == 1:
+            value = [string.strip() for string in value_pair.split("=", maxsplit=1)]
+            if len(value) == 1 and value[0]:
                 tag = self.__tag or value[0]
                 self._values.append(value[0])
+            elif value[0]:
+                tag = self.__tag or value[0]
+                self._values.append(value[1])
             else:
-                tag = self.__tag or value[0].strip()
-                self._values.append(value[1].strip())
+                continue
             self.__tag = tag
         self.label = self.label.replace("TAG", self.__tag)
         return self
