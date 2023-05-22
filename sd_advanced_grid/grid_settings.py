@@ -105,6 +105,8 @@ class AxisOption:
 
     @property
     def is_valid(self):
+        if not self._valid:
+            return None
         return all(self._valid)
 
     @property
@@ -123,7 +125,7 @@ class AxisOption:
         elif self.type == float:
             self._values = parse_range_float(value_list)
         else:
-            self._values = [value for value in map(self._format_value, value_list) if value]  # type: ignore
+            self._values = [value for value in map(self._format_value, value_list) if value not in {"", None}]  # type: ignore
         return self
 
     def unset(self):
@@ -140,19 +142,21 @@ class AxisOption:
             cast_value = round(float(value), 8)
 
         elif self.type == bool:
-            cast_value = str(value).lower().strip()
-            if cast_value in {"true", "yes", "1"}:
+            cast_value = str(value).lower()
+            if cast_value in {"true", "yes", "1", "on"}:
                 cast_value = True
-            elif cast_value in {"false", "no", "0"}:
+            elif cast_value in {"false", "no", "0", "off"}:
                 cast_value = False
 
         elif self.type == str and self.choices is not None:
             valid_list = self.choices()
             cast_value = get_closest_from_list(value, valid_list)
+        else:
+            cast_value = value
 
-        return cast_value or value.strip()
+        return cast_value
 
-    def validate(self, _, value) -> None:
+    def validate(self, value: AxisOption.type) -> None:
         """raise an error if the data type is incorrect"""
         same_type = isinstance(value, self.type)
         if self.type in (int, float):
@@ -172,10 +176,10 @@ class AxisOption:
         if not same_type:
             raise RuntimeError("Must be a valid type")
 
-    def validate_all(self, proc: SD_Proc, quiet: bool = True):
+    def validate_all(self, quiet: bool = True, **_):
         def validation(value):
             try:
-                self.validate(proc, value)
+                self.validate(value)
             except RuntimeError as err:
                 return f"'{err} for: {value}'"
             return None
@@ -197,13 +201,17 @@ class AxisNothing(AxisOption):
     def _apply(self, _):
         return
 
+    @property
+    def is_valid(self):
+        return True
+
 
 @dataclass
 class AxisModel(AxisOption):
     _: KW_ONLY
     cost: float = 1.0  # change of checkpoints is too heavy, do it less often
 
-    def validate(self, _, value: str):
+    def validate(self, value: str):
         info = sd_models.get_closet_checkpoint_match(value)
         if info is None:
             raise RuntimeError("Unknown checkpoint")
@@ -214,7 +222,7 @@ class AxisVae(AxisOption):
     _: KW_ONLY
     cost: float = 0.7
 
-    def validate(self, _, value: str):
+    def validate(self, value: str):
         if value in {"None", "Automatic"}:
             return
         if sd_vae.vae_dict.get(value, None) is None:
@@ -234,13 +242,24 @@ class AxisReplace(AxisOption):
         proc.prompt = proc.prompt.replace(self.__tag, value)
         proc.negative_prompt = proc.negative_prompt.replace(self.__tag, value)
 
-    def validate(self, proc: SD_Proc, _):
-        # need validation at runtime
+    def validate_all(self, quiet: bool = True, **kwargs):
+        proc = kwargs.pop("proc", None)
+        if proc is None:
+            return
+        error = ""
         if not self.__tag:
-            raise RuntimeError("Values not set or invalid format")
+            error = "Values not set or invalid format"
 
-        if self.__tag not in proc.prompt and self.__tag not in proc.negative_prompt:
-            raise RuntimeError(f"Tag '{self.__tag}' not found in all prompts")
+        elif self.__tag not in proc.prompt and self.__tag not in proc.negative_prompt:
+            error = f"Tag '{self.__tag}' not found in all prompts"
+
+        if error:
+            if quiet:
+                logger.warn(error)
+            else:
+                raise RuntimeError(error)
+        else:
+            self._valid = [True] * self.length
 
     def set(self, values: str = "") -> AxisOption:
         """

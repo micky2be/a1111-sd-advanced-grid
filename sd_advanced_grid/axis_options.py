@@ -12,15 +12,15 @@ axis_options: list[AxisOption] = [
     # fmt: off
     # # Common to txt2img and img2img
     AxisNothing("Nothing"),
-    AxisModel("Checkpoint",                 type=str,                   field="sd_model_checkpoint",        choices=lambda: list(sd_models.checkpoints_list)),
-    AxisVae("VAE",                          type=str,                   field="sd_vae",                     choices=lambda: list(sd_vae.vae_dict) + ["None", "Automatic"]),
+    AxisModel("Checkpoint",                 type=str,                   field="sd_model_checkpoint",        choices=lambda: sorted(sd_models.checkpoints_list, key=str.casefold)),
+    AxisVae("VAE",                          type=str,                   field="sd_vae",                     choices=lambda: ["None", "Automatic"] + sorted(sd_vae.vae_dict, key=str.casefold)),
     AxisOption("Seed",                      type=int,                   field="seed"),
     AxisOption("Steps",                     type=int,   max=200,        field="steps"),
     AxisOption("ClipSkip",                  type=int,   min=1,  max=12, field="CLIP_stop_at_last_layers"),
     AxisOption("Sampler",                   type=str,                   field="sampler_name",               choices=lambda: [x.name for x in sd_samplers.all_samplers]),
     AxisOption("CFG Scale",                 type=float, max=30,         field="cfg_scale"),
     # Misc
-    AxisOption("Restore Faces",             type=str,                   field="face_restoration_model",     toggles="restore_faces",    choices=lambda: [model.name() for model in shared.face_restorers] + ["None", "Default"]),
+    AxisOption("Restore Faces",             type=str,                   field="face_restoration_model",     toggles="restore_faces",    choices=lambda: ["None", "Default"] + [model.name() for model in shared.face_restorers]),
     AxisOption("CodeFormer Weight",         type=float,                 field="code_former_weight",         toggles="restore_faces"),
     AxisOption("Tiling",                    type=bool,                  field="tiling"),
     # AxisOption("Width",                     type=int,                   field="width"),

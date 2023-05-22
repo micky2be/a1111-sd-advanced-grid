@@ -3,3 +3,4 @@ GitPython
 gradio
 Pillow
 numpy
+typing_extensions

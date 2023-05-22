@@ -89,7 +89,6 @@ def apply_axes(set_proc: SD_Proc, axes_settings: list[AxisOption]):
         try:
             axis.apply(set_proc)
         except RuntimeError as err:
-            logger.debug(str(err))
             excs.append(err)
         else:
             axis_set[axis.id] = (axis.label, axis.value)
@@ -115,6 +114,7 @@ def prepare_jobs(adv_proc: SD_Proc, axes_settings: list[AxisOption], jobs: int, 
         set_proc.extra_generation_params["Adv. Grid"] = name
         axis_set, axis_code, errors = apply_axes(set_proc, axes_settings)
         if errors:
+            logger.debug(f"Detected issues for {axis_code}:", errors)
             # TODO: option to break here
             continue
         cell = GridCell(axis_code, set_proc, axis_set)
@@ -270,6 +270,7 @@ def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: i
         "name": grid_name,
         "params": json.loads(processed.js()),
         "axis": [axis.dict() for axis in axes],
+        # "cells": [{ "id": cell.cell_id, "set": cell.axis_set } for cell in cells] # for testing only
     }
 
     with grid_path.joinpath("config.json").open(mode="w", encoding="UTF-8") as file:

@@ -20,3 +20,16 @@
 #sd_adv_grid_settings .extra-options .gradio-checkbox label {
   align-self: end;
 }
+
+#sd_adv_grid_settings .axis-row span:not(.has-info) {
+  margin-bottom: var(--spacing-lg);
+}
+
+#sd_adv_grid_settings .axis-row .gradio-dropdown .token {
+  overflow-wrap: anywhere;
+}
+
+#sd_adv_grid_settings input:disabled, #sd_adv_grid_settings textarea:disabled {
+  background-color: var(--input-background-fill);
+  opacity: 0.5;
+}
