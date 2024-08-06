@@ -7,7 +7,7 @@ import string
 from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List
 
 # SD-WebUI
 from modules import images, processing, shared
@@ -27,7 +27,7 @@ AxisSet = dict[str, tuple[str, Any]]
 
 # ################################# Constants ################################ #
 
-CHAR_SET = string.digits + string.ascii_letters
+CHAR_SET = string.digits + string.ascii_uppercase
 PROB_PATTERNS = ["date", "datetime", "job_timestamp", "batch_number", "generation_number", "seed"]
 
 # ############################# Helper Functions ############################# #
@@ -43,6 +43,10 @@ def convert(num: int):
         num //= base
     return converted[::-1].zfill(2)
 
+def file_exist(folder: Path, cell_id: str):
+    files = [path.stem for path in sorted(folder.glob(f"adv_cell-{cell_id}-*.*"))]
+    files = list(filter(lambda file: file.startswith(f"adv_cell-{cell_id}-"), files))
+    return len(files) > 0
 
 def generate_filename(proc: SD_Proc, axis_set: AxisSet, keep_origin: bool = False):
     """generate a filename for each images based on data to be processed"""
@@ -58,7 +62,7 @@ def generate_filename(proc: SD_Proc, axis_set: AxisSet, keep_origin: bool = Fals
         for match in re_pattern.finditer(filename_pattern):
             pattern, keyword = match.groups()
             if keyword in PROB_PATTERNS:
-                filename_pattern = filename_pattern.replace(pattern, "")
+                filename_pattern = filename_pattern.replace("-" + pattern, "").replace("_" + pattern, "").replace(pattern, "")
 
         file_name = f"{namegen.apply(filename_pattern)}"
     else:
@@ -147,14 +151,6 @@ def combine_processed(processed_result: Processed, processed: Processed):
     return processed_result
 
 
-def file_exist(folder: Path, base_name: str, cell_id: str):
-    files = sorted(folder.glob(f"adv_cell-*{base_name}.*"))
-    if len(files) > 1:
-        # SD pattern might create collision, adding cell_id to pinpoint existance (still not guaranteed)
-        files = sorted(folder.glob(f"adv_cell-{cell_id}-{base_name}.*"))
-    return any(files)
-
-
 # ####################### Logic For Individual Variant ####################### #
 
 
@@ -175,16 +171,13 @@ class GridCell:
             self.job_count *= 2
 
     def run(self, save_to: Path, overwrite: bool = False, for_web: bool = False):
-        base_name = generate_filename(self.proc, self.axis_set)
-        file_name = f"adv_cell-{self.cell_id}-{base_name}"
-        file_ext = shared.opts.samples_format
-        file_path = save_to.joinpath(f"{file_name}.{file_ext}")
+
 
         total_steps = self.proc.steps + (
             (self.proc.hr_second_pass_steps or self.proc.steps) if self.proc.enable_hr else 0
         )
 
-        if file_exist(save_to, base_name, self.cell_id) and not overwrite:
+        if file_exist(save_to, self.cell_id) and not overwrite:
             # pylint: disable=protected-access
             self.skipped = True
             if shared.total_tqdm._tqdm:
@@ -203,7 +196,11 @@ class GridCell:
         )
 
         # All the magic happens here
-        processed = processing.process_images(self.proc)
+        processed = None
+        try:
+            processed = processing.process_images(self.proc)
+        except:
+            logger.error(f"Skipping cell #{self.cell_id} due to a rendering error.")
 
         if shared.state.interrupted:
             return
@@ -218,10 +215,15 @@ class GridCell:
             logger.warn(f"Skipping cell #{self.cell_id}, requested by the system.")
             return
 
-        if not processed.images or not any(processed.images):
+        if not processed or not processed.images or not any(processed.images):
             logger.warn(f"No images were generated for cell #{self.cell_id}")
             self.failed = True
             return
+
+        base_name = generate_filename(self.proc, self.axis_set, not for_web)
+        file_name = f"adv_cell-{self.cell_id}-{base_name}"
+        file_ext = shared.opts.samples_format
+        file_path = save_to.joinpath(f"{file_name}.{file_ext}")
 
         info_text = processing.create_infotext(
             self.proc, self.proc.all_prompts, self.proc.all_seeds, self.proc.all_subseeds
@@ -257,7 +259,7 @@ class GridCell:
 # ########################## Generation Entry Point ########################## #
 
 
-def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: int, test: bool, axes: list[AxisOption]):
+def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: int, test: bool, axes: list[AxisOption], for_web=False):
     grid_path = Path(adv_proc.outpath_grids, f"adv_grid_{clean_name(grid_name)}")
 
     processed = Processed(adv_proc, [], adv_proc.seed, "", adv_proc.subseed)
@@ -288,7 +290,7 @@ def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: i
         job_info = f"Generating variant #{i + 1} out of {len(cells)} - "
         shared.state.textinfo = job_info  # type: ignore
         shared.state.job = job_info  # seems to be unused
-        cell.run(save_to=grid_path.joinpath("images"), overwrite=overwrite)
+        cell.run(save_to=grid_path.joinpath("images"), overwrite=overwrite, for_web=for_web)
         cell.proc.close()
         if shared.state.interrupted:
             logger.warn("Process interupted. Cancelling all jobs.")

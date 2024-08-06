@@ -130,8 +130,8 @@ class AxisOption:
 
     def unset(self):
         self._index = 0
-        self._values = []
-        self._valid = []
+        self._values = list()
+        self._valid = list()
 
     def _format_value(self, value: str) -> AxisOption.type:
         cast_value = None
@@ -286,6 +286,8 @@ class AxisReplace(AxisOption):
         return self
 
     def unset(self):
-        super().unset()
-        self.label = self.label.replace(self.__tag, "TAG")
+        self._index = 0
+        self._values = list()
+        self._valid = list()
         self.__tag = ""
+        self.label = "TAG"

@@ -154,7 +154,7 @@ class ScriptGrid(scripts.Script):
                 row_value_bool = gr.CheckboxGroup(
                     label=f"Axis {axis_count} Values", visible=False, choices=["On", "Off"]
                 )
-                fill_row_button = ToolButton(value=FILL_SYMBOL, interactive=False, visible=False)
+                fill_row_button = ToolButton(value=FILL_SYMBOL, interactive=False, visible=True)
                 # row_value could be based on input Axis
                 # e.g. numbers: from, to, and steps or increment
                 #      AxisReplace: Texbox with a token system (need new Gradio component)
@@ -164,7 +164,8 @@ class ScriptGrid(scripts.Script):
             )
             row_value_list.input(populate_input, inputs=[row_type, row_value_list], outputs=[row_value])
             row_value_bool.input(populate_input, inputs=[row_type, row_value_bool], outputs=[row_value])
-            fill_row_button.click(fill_axis, inputs=[row_type], outputs=[row_value_list])
+            fill_row_button.click(fill_axis, inputs=[row_type], outputs=[row_value_list]) \
+                .then(populate_input, inputs=[row_type, row_value_list], outputs=[row_value])
             axes_selection.extend([row_type, row_value])
             return row_visibility
 
@@ -198,6 +199,11 @@ class ScriptGrid(scripts.Script):
                     info="Force selected VAE\n(ignores checkpoint matching if any)",
                     visible=False,
                 )
+                for_web = gr.Checkbox(
+                    value=False,
+                    label="For Web",
+                    info="Create Web Interface",
+                )
                 # fixed seed option?
 
         # fmt: off
@@ -210,7 +216,7 @@ class ScriptGrid(scripts.Script):
         add_button.click(lambda nb: nb + 1, inputs=[nb_axes], outputs=[nb_axes])
         del_button.click(lambda nb: nb - 1, inputs=[nb_axes], outputs=[nb_axes])
 
-        return [grid_name, do_overwrite, allow_batches, test_run, force_vae] + axes_selection
+        return [grid_name, do_overwrite, allow_batches, test_run, force_vae, for_web] + axes_selection
 
     def run(
         self,
@@ -220,6 +226,7 @@ class ScriptGrid(scripts.Script):
         allow_batches: bool,
         test_run: bool,
         force_vae: bool,
+        for_web: bool,
         *axes_selection: Unpack[tuple[Any, ...]],
     ) -> Processed:
         if not grid_name:
@@ -268,7 +275,7 @@ class ScriptGrid(scripts.Script):
             shared.total_tqdm.updateTotal(sum(total_steps) * variation)
 
         with SharedOptionsCache():
-            result = generate_grid(adv_proc, grid_name, overwrite, batches, test_run, axes_settings)
+            result = generate_grid(adv_proc, grid_name, overwrite, batches, test_run, axes_settings, for_web)
 
         for axis in axes_settings:
             axis.unset()
