@@ -191,7 +191,7 @@ class ScriptGrid(scripts.Script):
                 )
                 test_run = gr.Checkbox(value=False, label="Dry run", info="Do a dry run to validate your grid")
                 allow_batches = gr.Checkbox(
-                    value=False, label="Use batches", info="Will run in batches where possible", visible=False
+                    value=False, label="Use batches", info="Will run in batches where possible"
                 )
                 force_vae = gr.Checkbox(
                     value=False,
@@ -237,10 +237,10 @@ class ScriptGrid(scripts.Script):
         processing.fix_seed(adv_proc)
         adv_proc.override_settings_restore_afterwards = False
         adv_proc.n_iter = 1
-        adv_proc.batch_size = 1
         adv_proc.do_not_save_grid = True
         adv_proc.do_not_save_samples = True
         batches = adv_proc.batch_size if allow_batches else 1
+        adv_proc.batch_size = adv_proc.batch_size if allow_batches else 1
 
         if force_vae:
             # adv_proc.override_settings["sd_vae_as_default"] = False

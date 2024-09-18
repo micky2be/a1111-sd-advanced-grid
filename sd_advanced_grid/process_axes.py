@@ -7,7 +7,7 @@ import string
 from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 # SD-WebUI
 from modules import images, processing, shared
@@ -28,10 +28,9 @@ AxisSet = dict[str, tuple[str, Any]]
 # ################################# Constants ################################ #
 
 CHAR_SET = string.digits + string.ascii_uppercase
-PROB_PATTERNS = ["date", "datetime", "job_timestamp", "batch_number", "generation_number", "seed"]
+PROB_PATTERNS = ["date", "datetime", "job_timestamp", "batch_number", "generation_number"]
 
 # ############################# Helper Functions ############################# #
-
 
 def convert(num: int):
     """convert a decimal number into an alphanumerical value"""
@@ -48,21 +47,31 @@ def file_exist(folder: Path, cell_id: str):
     files = list(filter(lambda file: file.startswith(f"adv_cell-{cell_id}-"), files))
     return len(files) > 0
 
-def generate_filename(proc: SD_Proc, axis_set: AxisSet, keep_origin: bool = False):
+def generate_filename(proc: SD_Proc, axis_set: AxisSet, idx = 1, keep_origin: bool = False):
     """generate a filename for each images based on data to be processed"""
     file_name = ""
     if keep_origin:
         # use pattern defined by the user
-        # FIXME: how will fontend know about the filename?
         re_pattern = re.compile(r"(\[([^\[\]<>]+)(?:<.+>|)\])")
         width, height = proc.width, proc.height
-        namegen = images.FilenameGenerator(proc, proc.seed, proc.prompt, {"width": width, "height": height})
+        namegen = images.FilenameGenerator(
+            proc, proc.seeds[idx],
+            proc.prompts[idx],
+            {
+                "width": width,
+                "height": height
+            }
+        )
         filename_pattern = shared.opts.samples_filename_pattern or "[seed]-[prompt_spaces]"
         # remove patterns that may prevent existance detection
         for match in re_pattern.finditer(filename_pattern):
             pattern, keyword = match.groups()
             if keyword in PROB_PATTERNS:
-                filename_pattern = filename_pattern.replace("-" + pattern, "").replace("_" + pattern, "").replace(pattern, "")
+                filename_pattern = filename_pattern\
+                    .replace(" " + pattern, "")\
+                    .replace("-" + pattern, "")\
+                    .replace("_" + pattern, "")\
+                    .replace(pattern, "")
 
         file_name = f"{namegen.apply(filename_pattern)}"
     else:
@@ -101,15 +110,10 @@ def apply_axes(set_proc: SD_Proc, axes_settings: list[AxisOption]):
     return axis_set, "".join(axis_code[::-1]), excs
 
 
-def prepare_jobs(adv_proc: SD_Proc, axes_settings: list[AxisOption], jobs: int, name: str, batches: int = 1):
+def prepare_jobs(adv_proc: SD_Proc, axes_settings: list[AxisOption], jobs: int, name: str):
     """create a dedicated processing instance for each variation with different axes values"""
 
-    if batches > 1:
-        # note: batches are possible but only with prompt, negative_prompt, seeds, or subseed
-        pass
-
     cells: list[GridCell] = []
-
     for _ in range(jobs):
         set_proc = copy(adv_proc)
         processing.fix_seed(set_proc)
@@ -153,7 +157,6 @@ def combine_processed(processed_result: Processed, processed: Processed):
 
 # ####################### Logic For Individual Variant ####################### #
 
-
 @dataclass
 class GridCell:
     # init
@@ -173,9 +176,9 @@ class GridCell:
     def run(self, save_to: Path, overwrite: bool = False, for_web: bool = False):
 
 
-        total_steps = self.proc.steps + (
+        total_steps = (self.proc.steps + (
             (self.proc.hr_second_pass_steps or self.proc.steps) if self.proc.enable_hr else 0
-        )
+        )) * self.proc.batch_size
 
         if file_exist(save_to, self.cell_id) and not overwrite:
             # pylint: disable=protected-access
@@ -199,7 +202,7 @@ class GridCell:
         processed = None
         try:
             processed = processing.process_images(self.proc)
-        except:
+        except RuntimeError:
             logger.error(f"Skipping cell #{self.cell_id} due to a rendering error.")
 
         if shared.state.interrupted:
@@ -219,45 +222,46 @@ class GridCell:
             logger.warn(f"No images were generated for cell #{self.cell_id}")
             self.failed = True
             return
+        version = ""
+        filename_prefix = f"adv_cell-{self.cell_id}-"
 
-        base_name = generate_filename(self.proc, self.axis_set, not for_web)
-        file_name = f"adv_cell-{self.cell_id}-{base_name}"
-        file_ext = shared.opts.samples_format
-        file_path = save_to.joinpath(f"{file_name}.{file_ext}")
+        for idx, image in enumerate(processed.images):
+            base_name = generate_filename(self.proc, self.axis_set, idx, not for_web)
+            if len(processed.images) > 1:
+                version = f"(v{idx+1})-"
+            file_name = f"{filename_prefix}{version}{base_name}"
+            file_ext = shared.opts.samples_format
+            file_path = save_to.joinpath(f"{file_name}.{file_ext}")
 
-        info_text = processing.create_infotext(
-            self.proc, self.proc.all_prompts, self.proc.all_seeds, self.proc.all_subseeds
-        )
-        processed.infotexts[0] = info_text
-        image: Image.Image = processed.images[0]
+            info_text = processing.create_infotext(
+                self.proc, self.proc.all_prompts, self.proc.all_seeds, self.proc.all_subseeds, index=idx
+            )
+            processed.infotexts[idx] = info_text
 
-        images.save_image(
-            image,
-            path=str(file_path.parent),
-            basename="",
-            info=info_text,
-            forced_filename=file_path.stem,
-            extension=file_path.suffix[1:],
-            save_to_dirs=False,
-        )
+            images.save_image(
+                image,
+                path=str(file_path.parent),
+                basename="",
+                info=info_text,
+                forced_filename=file_path.stem,
+                extension=file_path.suffix[1:],
+                save_to_dirs=False,
+            )
+            processed.images[idx] = str(file_path)
 
-        processed.images[0] = str(file_path)
+            if for_web:
+                # create and save thumbnail
+                file_path = save_to.parent.joinpath("thumbnails", f"{file_name}.png")
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                thumb = image.copy()
+                thumb.thumbnail((512, 512))
+                thumb.save(file_path)
+
         self.processed = processed
-        # image.thumbnail((512, 512)) # could be useful to reduce memory usage (need testing)
-
-        if for_web:
-            # create and save thumbnail
-            file_path = save_to.parent.joinpath("thumbnails", f"{file_name}.png")
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            thumb = image.copy()
-            thumb.thumbnail((512, 512))
-            thumb.save(file_path)
-
         logger.debug(f"Cell {self.cell_id} saved as {file_path.stem}")
 
 
 # ########################## Generation Entry Point ########################## #
-
 
 def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: int, test: bool, axes: list[AxisOption], for_web=False):
     grid_path = Path(adv_proc.outpath_grids, f"adv_grid_{clean_name(grid_name)}")
@@ -265,7 +269,7 @@ def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: i
     processed = Processed(adv_proc, [], adv_proc.seed, "", adv_proc.subseed)
 
     aprox_jobs = math.prod([axis.length for axis in axes])
-    cells = prepare_jobs(adv_proc, axes, aprox_jobs, grid_name, batches)
+    cells = prepare_jobs(adv_proc, axes, aprox_jobs, grid_name)
 
     grid_path.mkdir(parents=True, exist_ok=True)
     grid_data = {
@@ -284,7 +288,11 @@ def generate_grid(adv_proc: SD_Proc, grid_name: str, overwrite: bool, batches: i
     shared.state.job_count = sum((cell.job_count for cell in cells), start=0)
     shared.state.processing_has_refined_job_count = True
 
-    logger.info(f"Starting generation of {len(cells)} variants")
+    if batches == 1:
+        logger.info(f"Starting generation of {len(cells)} variants")
+    else:
+        logger.info(
+            f"Starting generation of {len(cells)} variants (batch x{batches})")
 
     for i, cell in enumerate(cells):
         job_info = f"Generating variant #{i + 1} out of {len(cells)} - "

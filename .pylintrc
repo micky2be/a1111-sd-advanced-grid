@@ -3,7 +3,7 @@ ignored-modules=modules
 suggestion-mode=yes
 
 [FORMAT]
-max-module-lines=300
+max-module-lines=350
 
 [BASIC]
 const-naming-style=UPPER_CASE

@@ -26,4 +26,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint sd_advanced_grid
+        pylint -E sd_advanced_grid

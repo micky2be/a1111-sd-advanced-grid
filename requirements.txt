@@ -1,6 +1,6 @@
 colorama==0.4.6
 GitPython
-gradio
+gradio==3.41
 Pillow
 numpy
 typing_extensions
