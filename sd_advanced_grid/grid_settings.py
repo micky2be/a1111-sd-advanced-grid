@@ -267,10 +267,10 @@ class AxisReplace(AxisOption):
         - 'one, two, three' => ['one=one', 'one=two', 'one=three']
         - 'TAG=one, two, three' => ['TAG=one', 'TAG=two', 'TAG=three']
         - 'TAG=one, TAG=two, TAG=three' => ['TAG=one', 'TAG=two', 'TAG=three']
-        - 'TAG-one || TAG=two, three || TAG=four' => ['TAG=one', 'TAG=two, three', 'TAG=four']
+        - 'TAG-one | TAG=two, three | TAG=four' => ['TAG=one', 'TAG=two, three', 'TAG=four']
         """
-        has_double_pipe = "||" in values
-        value_list = [val.strip() for val in values.split("||" if has_double_pipe else ",")]
+        has_double_pipe = "|" in values
+        value_list = [val.strip() for val in values.split("|" if has_double_pipe else ",")]
         for value_pair in value_list:
             value = [string.strip() for string in value_pair.split("=", maxsplit=1)]
             if len(value) == 1 and value[0]:

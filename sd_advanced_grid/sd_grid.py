@@ -1,5 +1,5 @@
 # Python
-from copy import copy
+from copy import copy, deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -110,14 +110,6 @@ def nb_axes_changed(nb_axis: int):
     elif nb_axis > MAX_AXES:
         cur_axes = MAX_AXES
     return cur_axes
-
-
-def validate_values(axis_index: int, axis_values: str) -> bool | None:
-    axis = axis_options[axis_index]
-    if axis.type and axis_values:
-        axis.set(axis_values)
-    axis.validate_all()
-    return axis.is_valid
 
 
 # ############################### Script Class ############################### #
@@ -259,7 +251,7 @@ class ScriptGrid(scripts.Script):
             axis_index, axis_values = axes_selection[i : i + 2]
             if not axis_index or not axis_values:
                 continue
-            axis = axis_options[axis_index]
+            axis = deepcopy(axis_options[axis_index])
             axes_settings.append(axis.set(axis_values))
 
             index = STEP_FIELDS.index(axis.id) if axis.id in STEP_FIELDS else None
